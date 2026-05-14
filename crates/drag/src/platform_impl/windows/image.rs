@@ -11,13 +11,16 @@ use windows::Win32::{
         Gdi::{CreateBitmap, HBITMAP},
         Imaging::{
             CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapDecoder,
-            IWICImagingFactory, WICConvertBitmapSource, WICDecodeMetadataCacheOnDemand,
+            IWICImagingFactory, WICBitmapInterpolationModeFant, WICConvertBitmapSource,
+            WICDecodeMetadataCacheOnDemand,
         },
     },
     System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
 };
 
 use crate::Result;
+
+const DRAG_IMAGE_HEIGHT: u32 = 32;
 
 pub(crate) fn read_bytes_to_hbitmap(bytes: &[u8]) -> Result<HBITMAP> {
     unsafe {
@@ -33,7 +36,7 @@ pub(crate) fn read_bytes_to_hbitmap(bytes: &[u8]) -> Result<HBITMAP> {
             WICDecodeMetadataCacheOnDemand,
         )?;
 
-        decoder_to_hbitmap(decoder)
+        decoder_to_hbitmap(&factory, decoder)
     }
 }
 
@@ -52,11 +55,11 @@ pub(crate) fn read_path_to_hbitmap(path: &Path) -> Result<HBITMAP> {
             WICDecodeMetadataCacheOnDemand,
         )?;
 
-        decoder_to_hbitmap(decoder)
+        decoder_to_hbitmap(&factory, decoder)
     }
 }
 
-fn decoder_to_hbitmap(decoder: IWICBitmapDecoder) -> Result<HBITMAP> {
+fn decoder_to_hbitmap(factory: &IWICImagingFactory, decoder: IWICBitmapDecoder) -> Result<HBITMAP> {
     unsafe {
         let frame = decoder.GetFrame(0)?;
 
@@ -64,13 +67,20 @@ fn decoder_to_hbitmap(decoder: IWICBitmapDecoder) -> Result<HBITMAP> {
         let mut height: u32 = 0;
         frame.GetSize(&mut width, &mut height)?;
 
+        let scale = DRAG_IMAGE_HEIGHT as f64 / height as f64;
+        let width = ((width as f64 * scale).round() as u32).max(1);
+        let height = DRAG_IMAGE_HEIGHT;
+
+        let scaler = factory.CreateBitmapScaler()?;
+        scaler.Initialize(&frame, width, height, WICBitmapInterpolationModeFant)?;
+
         let mut pixel_buf: Vec<u8> = vec![0; (width * height * 4) as usize];
-        let pixel_format = frame.GetPixelFormat()?;
+        let pixel_format = scaler.GetPixelFormat()?;
         if pixel_format != GUID_WICPixelFormat32bppPBGRA {
-            let bitmap_source = WICConvertBitmapSource(&GUID_WICPixelFormat32bppPBGRA, &frame)?;
+            let bitmap_source = WICConvertBitmapSource(&GUID_WICPixelFormat32bppPBGRA, &scaler)?;
             bitmap_source.CopyPixels(std::ptr::null(), width * 4, &mut pixel_buf)?;
         } else {
-            frame.CopyPixels(std::ptr::null(), width * 4, &mut pixel_buf)?;
+            scaler.CopyPixels(std::ptr::null(), width * 4, &mut pixel_buf)?;
         }
 
         Ok(CreateBitmap(

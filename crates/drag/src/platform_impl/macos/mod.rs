@@ -165,10 +165,7 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
             let img = img.expect("Failed to create NSImage");
             let orig_size = img.size();
             let scale = 32.0 / orig_size.height as f64;
-            let image_size: NSSize = NSSize::new(
-              orig_size.width as f64 * scale,
-              32.0,
-            );
+            let image_size: NSSize = NSSize::new(orig_size.width as f64 * scale, 32.0);
             let image_rect = NSRect::new(
                 NSPoint::new(
                     current_position.x - image_size.width / 2.,
